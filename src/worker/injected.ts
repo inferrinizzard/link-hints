@@ -1,21 +1,15 @@
 import { makeRandomToken } from "../shared/main";
+import type { InjectedConfig } from "../shared/messages";
 
 // This file is injected as a regular script in all pages and overrides
 // `.addEventListener` (and friends) so we can detect click listeners.
 // This is a bit fiddly because we try to cover our tracks as good as possible.
 
-// Basically everything in this file has to be inside the `export default`
-// function, since `.toString()` is called on it in ElementManager. This also
-// means that `import`s generally cannot be used in this file. All of the below
-// constants are `.replace()`:ed in by ElementManager, but they are defined in
-// this file so that TypeScript knows about them.
+// Keep the injected function self-contained: Chrome serializes it for
+// `scripting.executeScript` in the page's main world.
 
-// NOTE: If you add a new constant, you have to update the `constants` object in
-// ElementManager.ts as well!
-
-// To make things even more complicated, in Firefox the `export default`
-// function is actually executed rather than inserted as an inline script. This
-// is to work around Firefox’s CSP limitations. As a bonus, Firefox can
+// In Firefox the function is executed in the isolated content-script context.
+// This works around Firefox’s CSP limitations. As a bonus, Firefox can
 // communicate with this file directly (via the `communicator` parameter) rather
 // than via very clever usage of DOM events. This works in Firefox due to
 // `.wrappedJSObject`, `exportFunction` and `XPCNativeWrapper`.
@@ -81,18 +75,38 @@ type IframeWrap = ((
   documentId: string;
 };
 
-export default (communicator?: {
-  onInjectedMessage: (message: FromInjected) => unknown;
-  addEventListener: (
-    eventName: string,
-    listener: () => unknown,
-    _?: true
-  ) => unknown;
-}): void => {
+export default (
+  injectedConfig: InjectedConfig,
+  communicator?: {
+    onInjectedMessage: (message: FromInjected) => unknown;
+    addEventListener: (
+      eventName: string,
+      listener: () => unknown,
+      _?: true
+    ) => unknown;
+  }
+): void => {
+  const {
+    browser: browserType,
+    metaSlug,
+    prefix: iframePrefix,
+    clickableChangedEvent,
+    clickableEventNames: injectedClickableEventNames,
+    clickableEventProps: injectedClickableEventProps,
+    closedShadowRootCreated1Event,
+    closedShadowRootCreated2Event,
+    documentWriteEvent,
+    flushEvent,
+    openShadowRootCreatedEvent,
+    queueEvent,
+    registerSecretElementEvent,
+    resetEvent,
+  } = injectedConfig;
   // Refers to the page `window` both in Firefox and other browsers.
-  const win = BROWSER === "firefox" ? window.wrappedJSObject ?? window : window;
+  const win =
+    browserType === "firefox" ? window.wrappedJSObject ?? window : window;
 
-  const iframeWrapName = `${prefix}A`;
+  const iframeWrapName = `${iframePrefix}A`;
 
   const getDocumentId = (target: Window): string => {
     // This API was added in Firefox 153. At the time of writing, that was too
@@ -107,7 +121,7 @@ export default (communicator?: {
     return typeof api === "function" ? api(target) : "";
   };
 
-  if (BROWSER === "firefox") {
+  if (browserType === "firefox") {
     // If an iframe is removed from the DOM, scripts running in it are immediately
     // killed. If the parent page has a reference to the iframe document, it can
     // still try to call stuff in it, like `.removeEventListener`. Firefox then
@@ -140,8 +154,8 @@ export default (communicator?: {
   }
 
   // These arrays are replaced in by ElementManager; only refer to them once.
-  const clickableEventNames = CLICKABLE_EVENT_NAMES;
-  const clickableEventProps = CLICKABLE_EVENT_PROPS;
+  const clickableEventNames = injectedClickableEventNames;
+  const clickableEventProps = injectedClickableEventProps;
 
   // When this was written, <https://jsfiddle.net/> overrides `Event` (which was
   // used before switching to `CustomEvent`) with a buggy implementation that
@@ -163,7 +177,7 @@ export default (communicator?: {
   /* eslint-enable @typescript-eslint/unbound-method */
 
   function logError(...args: Array<unknown>): void {
-    consoleLogError(`[${META_SLUG}]`, ...args);
+    consoleLogError(`[${metaSlug}]`, ...args);
   }
 
   type AnyFunction = (...args: Array<never>) => unknown;
@@ -234,7 +248,7 @@ export default (communicator?: {
               apply(originalFn, apply(mapGet, fnMap, [that]) ?? that, args)
           : (that: unknown, ...args: Array<never>): unknown => {
               let wrappedArgs = args;
-              if (BROWSER === "firefox") {
+              if (browserType === "firefox") {
                 wrappedArgs = args.map((arg) => XPCNativeWrapper(arg));
               }
 
@@ -255,7 +269,7 @@ export default (communicator?: {
               // "can't access dead object" for the old hooks will fail, so
               // ignore that error and abort those hooks.
               let returnValue = undefined;
-              if (BROWSER === "firefox") {
+              if (browserType === "firefox") {
                 try {
                   returnValue = XPCNativeWrapper(
                     apply(originalFn, that, args)
@@ -324,7 +338,7 @@ export default (communicator?: {
 
       let newDescriptor = { ...descriptor, [prop]: fn };
 
-      if (BROWSER === "firefox") {
+      if (browserType === "firefox") {
         let wrappedFn = fn;
         if (window.parent !== window) {
           let iframeWrap: IframeWrap | undefined = undefined;
@@ -379,7 +393,7 @@ export default (communicator?: {
     // `.toLocaleString` is automatically taken care of when patching `.toString`.
     conceal(): void {
       // This isn’t needed in Firefox, thanks to `exportFunction`.
-      if (BROWSER !== "firefox") {
+      if (browserType !== "firefox") {
         this.hookInto(win.Function.prototype, "toString");
       }
     }
@@ -463,7 +477,7 @@ export default (communicator?: {
         if (communicator !== undefined) {
           communicator.onInjectedMessage({ type: "Queue", hasQueue: true });
         } else {
-          sendWindowEvent(QUEUE_EVENT, true);
+          sendWindowEvent(queueEvent, true);
         }
       }
     }
@@ -487,7 +501,7 @@ export default (communicator?: {
         if (communicator !== undefined) {
           communicator.onInjectedMessage({ type: "Queue", hasQueue: false });
         } else {
-          sendWindowEvent(QUEUE_EVENT, false);
+          sendWindowEvent(queueEvent, false);
         }
       }
     }
@@ -595,7 +609,7 @@ export default (communicator?: {
             clickable: item.added,
           });
         } else {
-          sendElementEvent(CLICKABLE_CHANGED_EVENT, item.element, item.added);
+          sendElementEvent(clickableChangedEvent, item.element, item.added);
         }
       }
 
@@ -656,7 +670,7 @@ export default (communicator?: {
         // had a listener after all that was now removed. In Chrome this is
         // tracked correctly, but in Firefox we need to "lie" here and say that
         // the last listener was removed in case it was.
-        return BROWSER === "firefox";
+        return browserType === "firefox";
       }
 
       const optionsSet = optionsByListener.get(listener);
@@ -767,7 +781,7 @@ export default (communicator?: {
     if (communicator === undefined) {
       apply(appendChild, root, [secretElement]);
       apply(dispatchEvent, secretElement, [
-        new CustomEvent2(REGISTER_SECRET_ELEMENT_EVENT),
+        new CustomEvent2(registerSecretElementEvent),
       ]);
       apply(removeChild, root, [secretElement]);
     }
@@ -973,7 +987,7 @@ export default (communicator?: {
       // In “open” mode, ElementManager can access shadow roots via the
       // `.shadowRoot` property on elements. All we need to do here is tell
       // the ElementManager that a shadow root has been created.
-      sendElementEvent(OPEN_SHADOW_ROOT_CREATED_EVENT, shadowRoot.host);
+      sendElementEvent(openShadowRootCreatedEvent, shadowRoot.host);
     } else {
       // In “closed” mode, ElementManager cannot easily access shadow roots.
       // By creating a temporary element inside the shadow root and emitting
@@ -982,25 +996,20 @@ export default (communicator?: {
       // done in two steps – see the listeners in ElementManager to learn why.
       const tempElement = createElement("div");
       // Expose `tempElement`:
-      sendElementEvent(CLOSED_SHADOW_ROOT_CREATED_1_EVENT, tempElement);
+      sendElementEvent(closedShadowRootCreated1Event, tempElement);
       apply(appendChild, shadowRoot, [tempElement]);
       // Expose `shadowRoot`:
-      sendElementEvent(
-        CLOSED_SHADOW_ROOT_CREATED_2_EVENT,
-        tempElement,
-        undefined,
-        {
-          // Force firing the event while `tempElement` is still inside the
-          // closed shadow root. Normally we don’t do that, since events from
-          // within closed shadow roots appear to come from its host element,
-          // and the whole point of `sendElementEvent` is to set
-          // `event.target` to `element`, not to some shadow root. But in this
-          // special case `event.target` doesn’t matter and we _need_
-          // `tempElement` to be inside `shadowRoot` so that `.getRootNode()`
-          // returns it.
-          type: "Document",
-        }
-      );
+      sendElementEvent(closedShadowRootCreated2Event, tempElement, undefined, {
+        // Force firing the event while `tempElement` is still inside the
+        // closed shadow root. Normally we don’t do that, since events from
+        // within closed shadow roots appear to come from its host element,
+        // and the whole point of `sendElementEvent` is to set
+        // `event.target` to `element`, not to some shadow root. But in this
+        // special case `event.target` doesn’t matter and we _need_
+        // `tempElement` to be inside `shadowRoot` so that `.getRootNode()`
+        // returns it.
+        type: "Document",
+      });
       apply(removeChild, shadowRoot, [tempElement]);
     }
   }
@@ -1011,13 +1020,13 @@ export default (communicator?: {
 
   function onReset(): void {
     if (!PROD) {
-      consoleLog(`[${META_SLUG}] Resetting injected.ts`, RESET_EVENT);
+      consoleLog(`[${metaSlug}] Resetting injected.ts`, resetEvent);
     }
 
     // ElementManager removes listeners itself on reset.
     if (communicator === undefined) {
-      document.removeEventListener(FLUSH_EVENT, onFlush, true);
-      document.removeEventListener(RESET_EVENT, onReset, true);
+      document.removeEventListener(flushEvent, onFlush, true);
+      document.removeEventListener(resetEvent, onReset, true);
     }
 
     // Reset the overridden methods when the extension is shut down.
@@ -1028,8 +1037,8 @@ export default (communicator?: {
   // Use `document` rather than `window` in order not to appear in the “Global
   // event listeners” listing in devtools.
   const target = communicator ?? document;
-  target.addEventListener(FLUSH_EVENT, onFlush, true);
-  target.addEventListener(RESET_EVENT, onReset, true);
+  target.addEventListener(flushEvent, onFlush, true);
+  target.addEventListener(resetEvent, onReset, true);
 
   hookManager.hookInto(
     win.EventTarget.prototype,
@@ -1069,7 +1078,7 @@ export default (communicator?: {
             type: "DocumentWrite",
           });
         } else {
-          sendWindowEvent(DOCUMENT_WRITE_EVENT, undefined);
+          sendWindowEvent(documentWriteEvent, undefined);
         }
       }
     );

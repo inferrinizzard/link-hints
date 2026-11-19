@@ -15,6 +15,23 @@ import type { Box, LogLevel } from "./main";
 import type { OptionsData, PartialOptions } from "./options";
 import type { Durations, Stats, TabsPerf } from "./perf";
 
+export type InjectedConfig = {
+  browser: Browser;
+  metaSlug: string;
+  prefix: string;
+  clickableChangedEvent: string;
+  clickableEventNames: Array<string>;
+  clickableEventProps: Array<string>;
+  closedShadowRootCreated1Event: string;
+  closedShadowRootCreated2Event: string;
+  documentWriteEvent: string;
+  flushEvent: string;
+  openShadowRootCreatedEvent: string;
+  queueEvent: string;
+  registerSecretElementEvent: string;
+  resetEvent: string;
+};
+
 export type FromBackground =
   | {
       type: "FirefoxWorkaround";
@@ -57,6 +74,10 @@ export type ToBackground =
 export type FromWorker =
   | {
       type: "ClickedLinkNavigatingToOtherPage";
+    }
+  | {
+      type: "InjectMainWorld";
+      config: InjectedConfig;
     }
   | {
       type: "KeyboardShortcutMatched";

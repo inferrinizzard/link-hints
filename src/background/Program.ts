@@ -64,6 +64,7 @@ import {
 } from "../shared/perf";
 import { bool, tweakable, unsignedInt } from "../shared/tweakable";
 import {
+  executeMainWorldScript,
   executeScript,
   insertCSS,
   setActionBadgeBackgroundColor,
@@ -485,6 +486,14 @@ export default class BackgroundProgram {
     log("log", "BackgroundProgram#onWorkerMessage", message, info);
 
     switch (message.type) {
+      case "InjectMainWorld":
+        fireAndForget(
+          executeMainWorldScript(info.tabId, info.frameId, message.config),
+          "BackgroundProgram#onWorkerMessage->InjectMainWorld",
+          info
+        );
+        break;
+
       case "WorkerScriptAdded":
         this.sendWorkerMessage(
           // Make sure that the added worker script gets the same token as all
@@ -2042,7 +2051,7 @@ export default class BackgroundProgram {
     if (!enabled) {
       try {
         await executeScript(tabId, {
-          func: () => undefined,
+          file: "permission-check.js",
           runAt: "document_start",
         });
         enabled = true;

@@ -15,6 +15,7 @@ declare namespace chrome {
     interface InjectionTarget {
       tabId: number;
       allFrames?: boolean;
+      frameIds?: Array<number>;
     }
 
     interface InjectionResult {
@@ -25,7 +26,9 @@ declare namespace chrome {
       injection: {
         target: InjectionTarget;
         files?: Array<string>;
-        func?: () => void;
+        func?: (...args: Array<never>) => unknown;
+        args?: Array<unknown>;
+        world?: "ISOLATED" | "MAIN";
         injectImmediately?: boolean;
       },
       callback: (results: Array<InjectionResult>) => void
@@ -144,7 +147,6 @@ declare namespace browser.scripting {
   export function executeScript(injection: {
     target: InjectionTarget;
     files?: Array<string>;
-    func?: () => void;
     injectImmediately?: boolean;
   }): Promise<Array<InjectionResult>>;
 

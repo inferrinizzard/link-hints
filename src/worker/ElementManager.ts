@@ -21,6 +21,7 @@ import {
   SKIP_TEXT_ELEMENTS,
   walkTextNodes,
 } from "../shared/main";
+import type { InjectedConfig } from "../shared/messages";
 import type { Durations, Stats, TimeTracker } from "../shared/perf";
 import {
   elementTypeSet,
@@ -46,25 +47,21 @@ import injected, {
   RESET_EVENT,
 } from "./injected";
 
-// Keep the above imports and this object in sync. See injected.ts.
-const constants = {
-  CLICKABLE_CHANGED_EVENT: JSON.stringify(CLICKABLE_CHANGED_EVENT),
-  CLICKABLE_EVENT_NAMES: JSON.stringify(CLICKABLE_EVENT_NAMES),
-  CLICKABLE_EVENT_PROPS: JSON.stringify(CLICKABLE_EVENT_PROPS),
-  CLOSED_SHADOW_ROOT_CREATED_1_EVENT: JSON.stringify(
-    CLOSED_SHADOW_ROOT_CREATED_1_EVENT
-  ),
-  CLOSED_SHADOW_ROOT_CREATED_2_EVENT: JSON.stringify(
-    CLOSED_SHADOW_ROOT_CREATED_2_EVENT
-  ),
-  FLUSH_EVENT: JSON.stringify(FLUSH_EVENT),
-  OPEN_SHADOW_ROOT_CREATED_EVENT: JSON.stringify(
-    OPEN_SHADOW_ROOT_CREATED_EVENT
-  ),
-  QUEUE_EVENT: JSON.stringify(QUEUE_EVENT),
-  DOCUMENT_WRITE_EVENT: JSON.stringify(DOCUMENT_WRITE_EVENT),
-  REGISTER_SECRET_ELEMENT_EVENT: JSON.stringify(REGISTER_SECRET_ELEMENT_EVENT),
-  RESET_EVENT: JSON.stringify(RESET_EVENT),
+const injectedConfig: InjectedConfig = {
+  browser: BROWSER,
+  metaSlug: META_SLUG,
+  prefix: `WebExt_${META_SLUG}_${BUILD_ID}_`,
+  clickableChangedEvent: CLICKABLE_CHANGED_EVENT,
+  clickableEventNames: CLICKABLE_EVENT_NAMES,
+  clickableEventProps: CLICKABLE_EVENT_PROPS,
+  closedShadowRootCreated1Event: CLOSED_SHADOW_ROOT_CREATED_1_EVENT,
+  closedShadowRootCreated2Event: CLOSED_SHADOW_ROOT_CREATED_2_EVENT,
+  documentWriteEvent: DOCUMENT_WRITE_EVENT,
+  flushEvent: FLUSH_EVENT,
+  openShadowRootCreatedEvent: OPEN_SHADOW_ROOT_CREATED_EVENT,
+  queueEvent: QUEUE_EVENT,
+  registerSecretElementEvent: REGISTER_SECRET_ELEMENT_EVENT,
+  resetEvent: RESET_EVENT,
 };
 
 const ATTRIBUTES_CLICKABLE = new Set<string>([
@@ -414,21 +411,18 @@ export default class ElementManager {
     }
 
     if (BROWSER === "firefox") {
-      injected(this);
+      injected(injectedConfig, this);
       return;
     }
 
-    const rawCode = replaceConstants(injected.toString());
-    const code = `(${rawCode})()`;
-    const script = document.createElement("script");
-
-    // Chrome nicely allows inline scripts inserted by an extension regardless
-    // of CSP. I look forward to the day Firefox works this way too. See
-    // <bugzil.la/1446231> and <bugzil.la/1267027>.
-    script.textContent = code;
-
-    (document.documentElement ?? document).append(script);
-    script.remove();
+    const message = {
+      type: "FromWorker",
+      message: { type: "InjectMainWorld", config: injectedConfig },
+    };
+    fireAndForget(
+      browser.runtime.sendMessage(message).then(() => undefined),
+      "ElementManager#injectScript"
+    );
   }
 
   makeStats(durations: Durations): Stats {
@@ -2174,13 +2168,6 @@ function isWithin(point: Point, box: Box): boolean {
     // Use `<`, not `<=`, since a point at `box.y + box.height` is located at
     // the first pixel _below_ the box.
     point.y < box.y + box.height
-  );
-}
-
-function replaceConstants(code: string): string {
-  return code.replace(
-    RegExp(`\\b(${Object.keys(constants).join("|")})\\b`, "g"),
-    (name) => constants[name as keyof typeof constants]
   );
 }
 

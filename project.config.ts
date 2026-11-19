@@ -78,6 +78,10 @@ export default {
     input: "background/service-worker.ts",
     output: "background-service-worker.js",
   },
+  permissionCheck: {
+    input: "background/permission-check.js",
+    output: "permission-check.js",
+  },
   worker: {
     input: "worker/main.ts",
     output: "worker.js",

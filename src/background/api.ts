@@ -1,6 +1,8 @@
+import type { InjectedConfig } from "../shared/messages";
+import injected from "../worker/injected";
+
 type ScriptDetails = {
   file?: string;
-  func?: () => void;
   allFrames?: boolean;
   runAt?: "document_end" | "document_idle" | "document_start";
 };
@@ -16,7 +18,6 @@ export async function executeScript(
           {
             target: makeChromeTarget(tabId, details.allFrames),
             ...(details.file === undefined ? {} : { files: [details.file] }),
-            ...(details.func === undefined ? {} : { func: details.func }),
             ...(details.runAt === "document_start"
               ? { injectImmediately: true }
               : {}),
@@ -28,8 +29,8 @@ export async function executeScript(
     return results.map(({ result }) => result);
   }
 
-  if (details.file === undefined && details.func === undefined) {
-    throw new Error("Script file or function is required");
+  if (details.file === undefined) {
+    throw new Error("Script file is required");
   }
 
   const results = await browser.scripting.executeScript({
@@ -39,11 +40,32 @@ export async function executeScript(
         ? {}
         : { allFrames: details.allFrames }),
     },
-    ...(details.file === undefined ? {} : { files: [details.file] }),
-    ...(details.func === undefined ? {} : { func: details.func }),
+    files: [details.file],
     ...(details.runAt === "document_start" ? { injectImmediately: true } : {}),
   });
   return results.map(({ result }) => result);
+}
+
+export async function executeMainWorldScript(
+  tabId: number,
+  frameId: number,
+  config: InjectedConfig
+): Promise<void> {
+  if (BROWSER !== "chrome") {
+    throw new Error("Main-world scripting is only supported in Chrome");
+  }
+
+  await chromeCall<Array<chrome.scripting.InjectionResult>>((callback) => {
+    chrome.scripting.executeScript(
+      {
+        target: { tabId, frameIds: [frameId] },
+        world: "MAIN",
+        func: injected,
+        args: [config],
+      },
+      callback
+    );
+  });
 }
 
 export async function insertCSS(
