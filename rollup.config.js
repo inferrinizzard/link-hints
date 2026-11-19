@@ -39,6 +39,7 @@ setup();
 
 const main = [
   js(config.background),
+  js(config.backgroundServiceWorker),
   js(config.worker),
   js(config.renderer),
   js(config.popup),

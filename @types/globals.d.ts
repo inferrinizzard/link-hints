@@ -4,6 +4,61 @@ declare type Browser = "chrome" | "firefox";
 
 declare const BROWSER: Browser;
 
+declare function importScripts(...urls: Array<string>): void;
+
+declare namespace chrome {
+  namespace runtime {
+    const lastError: { message?: string } | undefined;
+  }
+
+  namespace scripting {
+    interface InjectionTarget {
+      tabId: number;
+      allFrames?: boolean;
+    }
+
+    interface InjectionResult {
+      result?: unknown;
+    }
+
+    function executeScript(
+      injection: {
+        target: InjectionTarget;
+        files?: Array<string>;
+        func?: () => void;
+        injectImmediately?: boolean;
+      },
+      callback: (results: Array<InjectionResult>) => void
+    ): void;
+
+    function insertCSS(
+      injection: {
+        target: InjectionTarget;
+        css: string;
+        origin: "AUTHOR" | "USER";
+      },
+      callback: () => void
+    ): void;
+  }
+
+  namespace action {
+    function setBadgeBackgroundColor(
+      details: { color: string },
+      callback: () => void
+    ): void;
+
+    function setIcon(
+      details: { path: Record<string, string>; tabId: number },
+      callback: () => void
+    ): void;
+
+    function setBadgeText(
+      details: { text: string; tabId: number },
+      callback: () => void
+    ): void;
+  }
+}
+
 declare const BUILD_ID: string;
 
 declare const COLOR_BADGE: string;
@@ -74,6 +129,30 @@ declare namespace browser.tabs {
   export interface Tab {
     vivExtData?: unknown;
   }
+}
+
+declare namespace browser.scripting {
+  interface InjectionTarget {
+    tabId: number;
+    allFrames?: boolean;
+  }
+
+  interface InjectionResult {
+    result?: unknown;
+  }
+
+  export function executeScript(injection: {
+    target: InjectionTarget;
+    files?: Array<string>;
+    func?: () => void;
+    injectImmediately?: boolean;
+  }): Promise<Array<InjectionResult>>;
+
+  export function insertCSS(injection: {
+    target: InjectionTarget;
+    css: string;
+    origin: "AUTHOR" | "USER";
+  }): Promise<void>;
 }
 
 // This was missing in `@types/firefox-webext-browser` at the time of writing.

@@ -74,6 +74,10 @@ export default {
     input: "background/main.ts",
     output: "background.js",
   },
+  backgroundServiceWorker: {
+    input: "background/service-worker.ts",
+    output: "background-service-worker.js",
+  },
   worker: {
     input: "worker/main.ts",
     output: "worker.js",

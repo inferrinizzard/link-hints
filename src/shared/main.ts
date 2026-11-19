@@ -41,7 +41,9 @@ export function log(level: LogLevel, ...args: Array<unknown>): void {
     console,
     `[${META_SLUG}]`,
     formatDate(new Date()),
-    window.location.protocol.endsWith("-extension:")
+    typeof window === "undefined"
+      ? "service worker"
+      : window.location.protocol.endsWith("-extension:")
       ? "extension page"
       : window.location.href,
     "\n ",
@@ -191,7 +193,7 @@ export function partition<T>(
 
 export function makeRandomToken(): string {
   const array = new Uint32Array(3);
-  window.crypto.getRandomValues(array);
+  globalThis.crypto.getRandomValues(array);
   return array.join("");
 }
 

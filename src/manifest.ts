@@ -6,7 +6,7 @@ type IconSizes = Record<string, string>;
 
 export default (): string =>
   toJSON({
-    manifest_version: 2,
+    manifest_version: 3,
     version: config.meta.version,
     name: config.meta.name,
     author: config.meta.author,
@@ -15,15 +15,17 @@ export default (): string =>
     browser_specific_settings: getBrowserSpecificSettings(config.browser),
     icons: getIcons(config.icons, config.browser),
     permissions: [
+      "scripting",
+      // Needed to store options.
+      "storage",
+    ],
+    host_permissions: [
       // Needed for injecting content scripts in already open tabs on install,
       // and for checking if tabs are allowed to run content scripts at all (so
       // that the toolbar button can update).
       "<all_urls>",
-      // Needed to store options.
-      "storage",
     ],
-    browser_action: {
-      browser_style: true,
+    action: {
       default_popup: config.popupHtml,
       default_icon: getIcons(config.icons, config.browser),
     },
@@ -31,12 +33,7 @@ export default (): string =>
       page: config.optionsHtml,
       open_in_tab: true,
     },
-    background: {
-      scripts: [
-        config.needsPolyfill ? config.polyfill.output : undefined,
-        config.background.output,
-      ].filter((script) => script !== undefined),
-    },
+    background: getBackground(config.browser),
     content_scripts: [
       {
         matches: ["<all_urls>"],
@@ -64,6 +61,27 @@ export default (): string =>
       },
     ],
   });
+
+function getBackground(browser: Browser | undefined): Record<string, unknown> {
+  const backgroundScripts = [
+    config.needsPolyfill ? config.polyfill.output : undefined,
+    config.background.output,
+  ].filter((script) => script !== undefined);
+
+  switch (browser) {
+    case "chrome":
+      return { service_worker: config.backgroundServiceWorker.output };
+
+    case "firefox":
+      return { scripts: backgroundScripts };
+
+    case undefined:
+      return {
+        scripts: backgroundScripts,
+        service_worker: config.backgroundServiceWorker.output,
+      };
+  }
+}
 
 function toJSON(obj: Record<string, unknown>): string {
   return JSON.stringify(obj, undefined, 2);

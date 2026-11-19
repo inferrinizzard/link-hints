@@ -63,6 +63,13 @@ import {
   TimeTracker,
 } from "../shared/perf";
 import { bool, tweakable, unsignedInt } from "../shared/tweakable";
+import {
+  executeScript,
+  insertCSS,
+  setActionBadgeBackgroundColor,
+  setActionBadgeText,
+  setActionIcon,
+} from "./api";
 
 type MessageInfo = {
   tabId: number;
@@ -208,19 +215,6 @@ export default class BackgroundProgram {
   async start(): Promise<void> {
     log("log", "BackgroundProgram#start", BROWSER, PROD);
 
-    try {
-      await this.updateOptions({ isInitial: true });
-    } catch (errorAny) {
-      const error = errorAny as Error;
-      this.options.errors = [error.message];
-    }
-
-    if (!PROD) {
-      await this.restoreTabsPerf();
-    }
-
-    const tabs = await browser.tabs.query({});
-
     this.resets.add(
       addListener(
         browser.runtime.onMessage,
@@ -246,7 +240,6 @@ export default class BackgroundProgram {
         browser.tabs.onUpdated,
         this.onTabUpdated.bind(this),
         "BackgroundProgram#onTabUpdated",
-        // Chrome doesn’t support filters.
         BROWSER === "firefox" ? { properties: ["status", "pinned"] } : undefined
       ),
       addListener(
@@ -255,6 +248,19 @@ export default class BackgroundProgram {
         "BackgroundProgram#onTabRemoved"
       )
     );
+
+    try {
+      await this.updateOptions({ isInitial: true });
+    } catch (errorAny) {
+      const error = errorAny as Error;
+      this.options.errors = [error.message];
+    }
+
+    if (!PROD) {
+      await this.restoreTabsPerf();
+    }
+
+    const tabs = await browser.tabs.query({});
 
     for (const tab of tabs) {
       if (tab.id !== undefined) {
@@ -267,7 +273,7 @@ export default class BackgroundProgram {
     }
 
     fireAndForget(
-      browser.browserAction.setBadgeBackgroundColor({ color: COLOR_BADGE }),
+      setActionBadgeBackgroundColor(COLOR_BADGE),
       "BackgroundProgram#start->setBadgeBackgroundColor"
     );
 
@@ -1522,8 +1528,7 @@ export default class BackgroundProgram {
           },
           { tabId: info.tabId }
         );
-        // Both uBlock Origin and Adblock Plus use `browser.tabs.insertCSS` with
-        // `{ display: none !important; }` and `cssOrigin: "user"` to hide
+        // Both uBlock Origin and Adblock Plus use user-origin CSS to hide
         // elements. I’ve seen Link Hints’ container to be hidden by a
         // `[style*="animation:"]` filter. This makes sure that the container
         // cannot be hidden by adblockers.
@@ -1533,13 +1538,13 @@ export default class BackgroundProgram {
         // Also, hide the backdrop of Link Hints’ container (it is a popover),
         // for sites with styles like `::backdrop { background-color: rgba(0, 0, 0, 0.2) }`
         fireAndForget(
-          browser.tabs.insertCSS(info.tabId, {
-            code: `${`#${CONTAINER_ID}`.repeat(
+          insertCSS(
+            info.tabId,
+            `${`#${CONTAINER_ID}`.repeat(
               255
             )} { display: block !important; &::backdrop { display: none !important; } }`,
-            cssOrigin: "user",
-            runAt: "document_start",
-          }),
+            "USER"
+          ),
           "BackgroundProgram#onRendererMessage",
           "Failed to insert adblock workaround CSS",
           message,
@@ -2036,8 +2041,8 @@ export default class BackgroundProgram {
     // Check if we’re allowed to execute content scripts on this page.
     if (!enabled) {
       try {
-        await browser.tabs.executeScript(tabId, {
-          code: "",
+        await executeScript(tabId, {
+          func: () => undefined,
           runAt: "document_start",
         });
         enabled = true;
@@ -2049,7 +2054,7 @@ export default class BackgroundProgram {
     const type: IconType = enabled ? "normal" : "disabled";
     const icons = getIcons(type);
     log("log", "BackgroundProgram#updateIcon", tabId, type);
-    await browser.browserAction.setIcon({ path: icons, tabId });
+    await setActionIcon(icons, tabId);
   }
 
   updateBadge(tabId: number): void {
@@ -2061,10 +2066,7 @@ export default class BackgroundProgram {
     const { hintsState } = tabState;
 
     fireAndForget(
-      browser.browserAction.setBadgeText({
-        text: getBadgeText(hintsState),
-        tabId,
-      }),
+      setActionBadgeText(getBadgeText(hintsState), tabId),
       "BackgroundProgram#updateBadge->setBadgeText"
     );
   }
@@ -2473,7 +2475,6 @@ async function runContentScripts(
               : script.js.map((file) => ({
                   file,
                   allFrames: script.all_frames,
-                  matchAboutBlank: script.match_about_blank,
                   runAt: script.run_at,
                 }))
           );
@@ -2485,10 +2486,7 @@ async function runContentScripts(
           return [];
         }
         try {
-          return (await browser.tabs.executeScript(
-            tab.id,
-            details
-          )) as Array<unknown>;
+          return await executeScript(tab.id, details);
         } catch {
           // If `executeScript` fails it means that the extension is not
           // allowed to run content scripts in the tab. Example: most
@@ -2563,7 +2561,7 @@ type IconType = "disabled" | "normal";
 function getIcons(type: IconType): Record<string, string> {
   const manifest = browser.runtime.getManifest();
   return Object.fromEntries(
-    Object.entries(manifest.browser_action?.default_icon ?? {}).flatMap(
+    Object.entries(manifest.action?.default_icon ?? {}).flatMap(
       ([key, value]) => {
         if (typeof value === "string") {
           const newValue = value.replace(/(\$)\w+/, `$1${type}`);
